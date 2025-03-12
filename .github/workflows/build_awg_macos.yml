@@ -3,7 +3,6 @@ name: macos-awg
 on: [push]
 
 jobs:
-
   Build-AWG-MacOS:
     name: 'AmneziaWG for MacOS'
     runs-on: macos-11
@@ -11,53 +10,81 @@ jobs:
       contains(github.event.head_commit.message, '[all]') ||
       contains(github.event.head_commit.message, '[macos]') ||
       contains(github.event.head_commit.message, '[macos-awg]') ||
-      contains(github.event.head_commit.message, '[awg]') 
+      contains(github.event.head_commit.message, '[awg]')
 
     steps:
+      - name: 'Get AmneziaWG'
+        uses: actions/checkout@v4
+        with:
+          repository: amnezia-vpn/amneziawg-go
+          ref: master
+          path: amneziawg-go
 
-    - name: 'Get AmneziaWG'
-      uses: actions/checkout@v4
-      with:
-        repository: amnezia-vpn/amneziawg-go
-        ref: master
-        path: amneziawg-go
+      - name: 'Run build script'
+        working-directory: amneziawg-go
+        run: |
+          make
+          ./amneziawg-go --version
 
-    - name: 'Run build script'
-      working-directory: amneziawg-go
-      run: |
-        make
-        ./amneziawg-go --version
+      - name: 'Verify fat binary for libwg-go.a'
+        working-directory: amneziawg-go
+        run: |
+          if [ ! -f libwg-go.a ]; then
+            echo "Error: libwg-go.a not found!"
+            exit 1
+          fi
+          info=$(lipo -info libwg-go.a)
+          echo "$info"
+          if [[ "$info" != *"x86_64"* || "$info" != *"arm64"* ]]; then
+            echo "Error: libwg-go.a is not a fat (universal) binary."
+            exit 1
+          fi
 
-    - name: 'Archive artifacts'
-      uses: actions/upload-artifact@v4
-      with:
-        name: awg-macos
-        path: amneziawg-go/amneziawg-go
+      - name: 'Generate SHA256 checksum'
+        working-directory: amneziawg-go
+        run: |
+          openssl dgst -sha256 -r libwg-go.a | awk '{print $1}' > libwg-go.a.sha256
+
+      - name: 'Zip artifact with checksum'
+        working-directory: amneziawg-go
+        run: |
+          zip -q -r awg-macos.zip libwg-go.a libwg-go.a.sha256
+
+      - name: 'Archive artifacts'
+        uses: actions/upload-artifact@v4
+        with:
+          name: awg-macos
+          path: amneziawg-go/awg-macos.zip
 
   github-release:
     name: GitHub Release
     needs: Build-AWG-MacOS
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/')
-
     steps:
-    - name: Setup | Checkout
-      uses: actions/checkout@v4
+      - name: Setup | Checkout
+        uses: actions/checkout@v4
 
-    - name: Setup | Artifacts
-      uses: actions/download-artifact@v4
+      - name: Setup | Artifacts
+        uses: actions/download-artifact@v4
 
-    - name: Setup | Checksums
-      run: for file in $(find ./ -name '*' ); do openssl dgst -sha256 -r "$file" | awk '{print $1}' > "${file}.sha256"; done
+      - name: Setup | Checksums
+        run: |
+          for file in $(find ./ -type f -name '*'); do
+            openssl dgst -sha256 -r "$file" | awk '{print $1}' > "${file}.sha256"
+          done
 
-    - name: Zip ALL
-      run: for file in *; do zip -r ${file%.*}.zip  $file; done
+      - name: Zip ALL
+        run: |
+          for file in *; do
+            zip -q -r ${file%.*}.zip "$file"
+          done
 
-    - name: Upload binaries to release
-      uses: svenstaro/upload-release-action@v2
-      with:
-        repo_token: ${{ secrets.GITHUB_TOKEN }}
-        file: awg-macos.zip
-        tag: ${{ github.ref }}
-        overwrite: true
-        file_glob: true
+      - name: Upload binaries to release
+        uses: svenstaro/upload-release-action@v2
+        with:
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: awg-macos.zip
+          tag: ${{ github.ref }}
+          overwrite: true
+          file_glob: true
