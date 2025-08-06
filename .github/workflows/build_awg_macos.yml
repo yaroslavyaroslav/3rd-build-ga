@@ -94,7 +94,7 @@ jobs:
     name: GitHub Release
     needs: [Build-AWG-MacOS, Build-AWG-macOS-NE]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/')
+    # if: startsWith(github.ref, 'refs/tags/')
 
     steps:
     - name: Setup | Checkout
@@ -105,14 +105,14 @@ jobs:
 
     - name: Setup | Checksums
       run: |
-        for file in amneziawg-apple/Sources/WireGuardKitGo/out/libwg-go.a amneziawg-go/amneziawg-go; do
+        for file in awg-macos-libwg/libwg-go.a awg-macos-binary/amneziawg-go; do
           openssl dgst -sha256 -r "$file" | awk '{print $1}' > "${file}.sha256"
         done
 
     - name: Zip ALL
       run: |
-        zip -j libwg-go.zip amneziawg-apple/Sources/WireGuardKitGo/out/libwg-go.a
-        zip -j amneziawg-go.zip amneziawg-go/amneziawg-go
+        zip -j libwg-go.a.zip awg-macos-libwg/libwg-go.a awg-macos-libwg/libwg-go.a.sha256
+        zip -j amneziawg-go.zip awg-macos-binary/amneziawg-go awg-macos-binary/amneziawg-go.sha256
 
     - name: Upload binaries to release
       uses: svenstaro/upload-release-action@v2
